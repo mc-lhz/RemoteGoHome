@@ -4,10 +4,10 @@ import os
 import sys
 import subprocess
 import requests
-from dotenv import loadDotenv
+from dotenv import load_dotenv
 import Logcat
 
-loadDotenv()
+load_dotenv()
 
 Log = Logcat.Logcat(outputFile=None)
 
