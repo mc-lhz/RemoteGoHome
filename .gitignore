@@ -1,0 +1,14 @@
+# ===== Python =====
+python/.env
+__pycache__/
+*.pyc
+
+# ===== wrangler 本地配置/缓存 =====
+.wrangler-home/
+.worker/
+.node_modules/
+# 含密钥的真实配置不入库，用 wrangler.toml.example 作模板
+worker/wrangler.toml
+
+# ===== 日志 =====
+*.log

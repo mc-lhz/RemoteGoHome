@@ -1,0 +1,21 @@
+name = "remote-go-home"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+# 你的 Cloudflare 账户 ID（在 dashboard 右侧可见）
+account_id = "your-account-id"
+
+# KV 命名空间绑定，变量名 REMOTE_KV 需与 worker.js 中 env.REMOTE_KV 对应。
+# 部署前请先创建 KV 命名空间并替换 id：
+#   npx wrangler kv namespace create REMOTE_KV
+[[kv_namespaces]]
+binding = "REMOTE_KV"
+id = "your-kv-namespace-id"
+
+# 普通环境变量（明文，随部署打包，不含密钥）
+[vars]
+DEFAULT_PORT = "80"
+
+# ===== 密钥（不要写进本文件，用 secret 管理）=====
+# 复制本文件为 wrangler.toml 后，执行：
+#   npx wrangler secret put PASSWORD
+# 按提示输入密码（即 Worker 共享密码），部署后 env.PASSWORD 生效。
