@@ -7,7 +7,8 @@ import requests
 from dotenv import load_dotenv
 import Logcat
 
-load_dotenv()
+# 显式加载脚本同目录下的 .env，避免因工作目录不同导致环境变量缺失
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env"))
 
 Log = Logcat.Logcat(outputFile=None)
 
@@ -18,11 +19,13 @@ PORT = int(os.environ.get("PORT", "80"))
 # cpolar 把日志落盘，Python 读文件抓取地址（已验证有效）
 CPOLAR_LOG_PATH = os.environ.get("CPOLAR_LOG_PATH")
 CPOLAR_ARGS = ["http", str(PORT), "-log=" + CPOLAR_LOG_PATH]
-MAX_RETRY_COUNT = 5
-CF_RETRY_DELAY = 20
-CPOLAR_RETRY_DELAY = 40
+MAX_RETRY_COUNT = int(os.environ.get("MAX_RETRY_COUNT", "30"))
+CF_RETRY_DELAY = int(os.environ.get("CF_RETRY_DELAY", "20"))
+CPOLAR_RETRY_DELAY = int(os.environ.get("CPOLAR_RETRY_DELAY", "40"))
 
-CLOUDFLARE_WORKERS_API = "https://remote.mclhz.de5.net/write"
+CLOUDFLARE_WORKERS_API = os.environ.get(
+    "CLOUDFLARE_WORKERS_API", "https://remote.mclhz.de5.net/write"
+)
 WORKER_PASSWORD = os.environ.get("WORKER_PASSWORD", "")
 
 # 匹配 cpolar 公网地址：无论 Forwarding 行还是 JSON 日志，地址都含 cpolar 域名
@@ -71,13 +74,36 @@ def pushAddressToCloudflareWorkers(address):
     Log.i("cpolar", f"推送结果: HTTP {response.status_code} {response.text}")
 
 
+def deleteLogFiles(logPath):
+    """删除 cpolar 日志的全部相关文件：符号链接本身 + 按日期滚动的真实文件 + master 日志。
+    cpolar 的日志是"符号链接(logPath) -> 真实文件(logPath.YYYYMMDD)"结构，
+    只删链接会留下旧日期文件，下次读到过期地址，因此按前缀整体清理。
+    文件被运行中的 cpolar 占用时删除会失败，重试几次后仍失败则告警。"""
+    directory = os.path.dirname(logPath) or "."
+    baseName = os.path.basename(logPath)
+    for attempt in range(3):
+        remaining = []
+        for name in os.listdir(directory):
+            if name == baseName or name.startswith(baseName + "."):
+                fullPath = os.path.join(directory, name)
+                try:
+                    os.remove(fullPath)
+                    Log.i("cpolar", f"已删除旧日志 {fullPath}")
+                except OSError as error:
+                    remaining.append(f"{name}({error})")
+                    Log.w("cpolar", f"删除旧日志 {fullPath} 失败: {error}")
+        if not remaining:
+            return
+        time.sleep(1)
+    Log.w("cpolar", f"删除旧日志失败: {remaining}")
+
+
 def tailLog(logPath):
     """持续读取日志文件新增行（文件落盘不受管道缓冲影响）。"""
     # 若文件不存在，等它出现
     while not os.path.exists(logPath):
         time.sleep(1)
-    # 从头读：启动前已删除旧日志，文件内容全部属于本次运行；
-    # 不能 seek 到末尾，否则 cpolar 建得快时地址行在打开前已落盘会被跳过
+    # 从头读：启动前已删除旧日志，文件内容全部属于本次运行
     with open(logPath, "r", encoding="utf-8", errors="replace") as file:
         while True:
             line = file.readline()
@@ -93,11 +119,7 @@ def tailLog(logPath):
 if __name__ == "__main__":
     while True:
         # 启动前删除旧日志，避免 tailLog 读到上次运行的过期地址
-        try:
-            if os.path.exists(CPOLAR_LOG_PATH):
-                os.remove(CPOLAR_LOG_PATH)
-        except OSError as error:
-            Log.w("cpolar", f"删除旧日志失败: {error}")
+        deleteLogFiles(CPOLAR_LOG_PATH)
         # 后台启动 cpolar，日志写文件（-log 已加进 CPOLAR_ARGS）
         process = subprocess.Popen([CPOLAR_PATH] + CPOLAR_ARGS)
         Log.i("cpolar", f"已启动 cpolar（PID={process.pid}），开始监听日志 {CPOLAR_LOG_PATH}")
@@ -146,5 +168,10 @@ if __name__ == "__main__":
 
         except Exception as error:
             Log.e("cpolar", f"监听异常: {error}")
+        # 重启前确保旧进程已结束，否则会出现多个 cpolar 实例共写一个日志文件
+        if process.poll() is None:
+            Log.i("cpolar", f"旧 cpolar 进程（PID={process.pid}）仍在运行，先终止再重启")
+            process.kill()
+            process.wait()
         Log.i("cpolar", "cpolar 进程已退出，准备重启...")
         time.sleep(5)
