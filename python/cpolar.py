@@ -19,6 +19,8 @@ PORT = int(os.environ.get("PORT", "80"))
 CPOLAR_LOG_PATH = os.environ.get("CPOLAR_LOG_PATH")
 CPOLAR_ARGS = ["http", str(PORT), "-log=" + CPOLAR_LOG_PATH]
 MAX_RETRY_COUNT = 5
+CF_RETRY_DELAY = 20
+CPOLAR_RETRY_DELAY = 40
 
 CLOUDFLARE_WORKERS_API = "https://remote.mclhz.de5.net/write"
 WORKER_PASSWORD = os.environ.get("WORKER_PASSWORD", "")
@@ -65,6 +67,7 @@ def pushAddressToCloudflareWorkers(address):
     }
     params = {"password": WORKER_PASSWORD}
     response = requests.post(CLOUDFLARE_WORKERS_API, json=payload, params=params, timeout=30)
+    response.raise_for_status()
     Log.i("cpolar", f"推送结果: HTTP {response.status_code} {response.text}")
 
 
@@ -73,8 +76,9 @@ def tailLog(logPath):
     # 若文件不存在，等它出现
     while not os.path.exists(logPath):
         time.sleep(1)
+    # 从头读：启动前已删除旧日志，文件内容全部属于本次运行；
+    # 不能 seek 到末尾，否则 cpolar 建得快时地址行在打开前已落盘会被跳过
     with open(logPath, "r", encoding="utf-8", errors="replace") as file:
-        file.seek(0, os.SEEK_END)
         while True:
             line = file.readline()
             if not line:
@@ -88,6 +92,12 @@ def tailLog(logPath):
 
 if __name__ == "__main__":
     while True:
+        # 启动前删除旧日志，避免 tailLog 读到上次运行的过期地址
+        try:
+            if os.path.exists(CPOLAR_LOG_PATH):
+                os.remove(CPOLAR_LOG_PATH)
+        except OSError as error:
+            Log.w("cpolar", f"删除旧日志失败: {error}")
         # 后台启动 cpolar，日志写文件（-log 已加进 CPOLAR_ARGS）
         process = subprocess.Popen([CPOLAR_PATH] + CPOLAR_ARGS)
         Log.i("cpolar", f"已启动 cpolar（PID={process.pid}），开始监听日志 {CPOLAR_LOG_PATH}")
@@ -99,11 +109,18 @@ if __name__ == "__main__":
                 # Log.i("cpolar", f"[cpolar] {line}")
                 address = extractAddress(line)
                 if address:
-                    Log.i("cpolar", f"检测到新地址: {address}，完整日志: {line}")
-                    try:
-                        pushAddressToCloudflareWorkers(address)
-                    except Exception as error:
-                        Log.e("cpolar", f"推送地址: {address} 失败: {error}")
+                    # 一直重试推送，直到可用，指数退避策略
+                    retryIndex = 1
+                    while True:
+                        try:
+                            pushAddressToCloudflareWorkers(address)
+                            Log.i("cpolar", f"推送到 Cloudflare Workers 成功，地址: {address}，完整日志: {line}")
+                            break
+                        except Exception as error:
+                            Log.e("cpolar", f"推送地址: {address} 失败: {error}")
+                            retryIndex *= 2
+                            time.sleep(retryIndex if retryIndex <= CF_RETRY_DELAY else CF_RETRY_DELAY)
+                    # 检查服务是否可用
                     tryCount = MAX_RETRY_COUNT
                     while tryCount > 0:
                         # 检查进程是否已退出
@@ -113,7 +130,7 @@ if __name__ == "__main__":
                         if checkAddressAvailable(address):
                             # 若可用
                             tryCount = MAX_RETRY_COUNT
-                            time.sleep(20)
+                            time.sleep(CPOLAR_RETRY_DELAY)
                         else:
                             # 若不可用
                             Log.i("cpolar", f"服务未响应 {tryCount}")
