@@ -7,8 +7,8 @@ __pycache__/
 .wrangler-home/
 .worker/
 .node_modules/
-# 含密钥的真实配置不入库，用 wrangler.toml.example 作模板
-worker/wrangler.toml
+# wrangler.toml 仅含 account_id/KV id/DEFAULT_PORT，不含密钥（PASSWORD 走 secret），
+# 需提交以便 Cloudflare Git 集成构建使用；敏感值放 wrangler.toml.example 作模板
 
 # ===== 日志 =====
 *.log

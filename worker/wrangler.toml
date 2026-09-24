@@ -1,0 +1,11 @@
+name = "remote-go-home"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+account_id = "e21c0e595591b28d8130c583855c92a1"
+
+[[kv_namespaces]]
+binding = "REMOTE_KV"
+id = "c53921c1b29c4dd9a103ffcaf17fa64f"
+
+[vars]
+DEFAULT_PORT = "80"
