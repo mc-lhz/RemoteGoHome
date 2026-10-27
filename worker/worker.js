@@ -69,7 +69,7 @@ export default {
         { headers: { "Content-Type": "text/html" } }
       );
     }
-
+    
     return jsonify({ code: 404, msg: "Not Found" });
   },
 };
