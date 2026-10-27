@@ -149,6 +149,11 @@ if __name__ == "__main__":
                     continue
                 # Log.i("cpolar", f"[cpolar] {line}")
                 address = extractAddress(line)
+                # 若分配到.cpolar.cn，重启
+                if address and address.endswith(".cpolar.cn"):
+                    Log.w("cpolar", f"分配到.cpolar.cn，准备重启")
+                    exitFlag = True
+                    break
                 if address:
                     # 已获取地址：禁用"未获地址"超时，交给下方可用性监控
                     addressDeadline = None

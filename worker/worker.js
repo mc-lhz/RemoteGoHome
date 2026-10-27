@@ -30,7 +30,7 @@ export default {
     const defaultPort = env.DEFAULT_PORT || "80";
 
     if (!checkAuth(workersUrl, env)) {
-      return jsonify({ code: 401, msg: "UnAuthorized" });
+      return jsonify({ code: 401, msg: "Unauthorized" });
     }
 
     // 写入新地址：POST /write?port=80&password=xxx  body: {"url": "..."}
@@ -40,7 +40,7 @@ export default {
         const body = await request.json();
         const tunnelUrl = body.url;
         if (!tunnelUrl) {
-          return jsonify({ code: 400, msg: "url required" });
+          return jsonify({ code: 400, msg: "Url required" });
         }
         // 永久不过期，故不传 expirationTtl
         await env.REMOTE_KV.put(localPort, tunnelUrl);
@@ -62,7 +62,7 @@ export default {
       const localPort = workersUrl.searchParams.get("port") || defaultPort;
       const tunnelUrl = await readKV(localPort, env);
       if (!tunnelUrl) {
-        return jsonify({ code: 404, msg: "no address" });
+        return jsonify({ code: 404, msg: "No address" });
       }
       return new Response(
         "<script>window.location.href='" + tunnelUrl + "';</script>",
